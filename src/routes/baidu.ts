@@ -34,34 +34,49 @@ export const handleRoute = async (c: ListContext, noCache: boolean) => {
 const getList = async (options: Options, noCache: boolean): Promise<RouterResType> => {
   const { type } = options;
 
-  // ✅ 用 JSON API，不再解析 HTML 注释
   const url = `https://top.baidu.com/api/board?tab=${type}`;
 
   const result = await get({
     url,
-    noCache,
+    // ✅ 排查阶段建议强制 true，确认没缓存问题
+    noCache: true,
     headers: {
       "User-Agent":
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 14_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile Safari/605.1.15",
-      Referer: "https://top.baidu.com/board",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+      Accept: "application/json, text/plain, */*",
+      "Accept-Language": "zh-CN,zh;q=0.9",
+      Referer: `https://top.baidu.com/board?tab=${type}`,
     },
   });
 
-  const list: RouterType["baidu"][] = result.data?.data?.cards?.[0]?.content ?? [];
+  // ✅ 如果被返回 HTML，直接返回空并带提示（避免缓存污染）
+  if (typeof result.data === "string") {
+    return {
+      ...result,
+      fromCache: false,
+      data: [],
+    };
+  }
+
+  const cards = result.data?.data?.cards ?? result.data?.cards ?? [];
+  const content = cards?.[0]?.content;
+  const list: RouterType["baidu"][] = Array.isArray(content) ? content : [];
 
   return {
     ...result,
-    data: list.map((v) => ({
-      id: v.index,
-      title: v.word,
-      desc: v.desc,
-      cover: v.img,
-      author: v.show?.length ? v.show : "",
-      timestamp: 0,
-      hot: Number(v.hotScore || 0),
-      // ✅ query 可能缺失，用 word 兜底，避免 wd=undefined
-      url: `https://www.baidu.com/s?wd=${encodeURIComponent(v.query || v.word)}`,
-      mobileUrl: v.rawUrl || `https://www.baidu.com/s?wd=${encodeURIComponent(v.query || v.word)}`,
-    })),
+    data: list.map((v) => {
+      const q = v.query || v.word || "";
+      return {
+        id: String(q || v.index),
+        title: v.word || q,
+        desc: v.desc || "",
+        cover: v.img || "",
+        author: v.show?.length ? v.show : "",
+        timestamp: 0,
+        hot: Number(v.hotScore || 0),
+        url: `https://www.baidu.com/s?wd=${encodeURIComponent(q)}`,
+        mobileUrl: v.rawUrl || `https://www.baidu.com/s?wd=${encodeURIComponent(q)}`,
+      };
+    }),
   };
 };
